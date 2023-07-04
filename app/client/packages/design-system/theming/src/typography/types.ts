@@ -11,12 +11,13 @@ export const TypographyVariant = {
   heading: "heading",
 } as const;
 
-export type TypographyType =
-  | "default"
-  | "neutral"
-  | "positive"
-  | "negative"
-  | "warn";
+export const TypographyType = {
+  default: "default",
+  neutral: "neutral",
+  positive: "positive",
+  negative: "negative",
+  warn: "warn",
+} as const;
 
 export type FontFamily = keyof typeof fontMetrics;
 

@@ -1,0 +1,58 @@
+import { Canvas, Meta, Story, ArgsTable } from "@storybook/addon-docs";
+import { ThemeProvider } from "./ThemeProvider";
+import styled from "styled-components";
+
+<Meta title="Design-system/Theme/Theme" component={ThemeProvider} />
+
+# Theme
+
+The theme package substitutes hooks and components for working with theming.
+
+## ThemeProvider
+
+export const Template = () => <ThemeProvider theme={{}} />;
+<ArgsTable of={ThemeProvider} />;
+
+export const StyledWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  align-self: stretch;
+`;
+
+<Canvas withSource="none">
+  <Story name="ThemeProvider">
+    <StyledWrapper>
+      <h2>ThemeProvider</h2>
+      <p>
+        This page describes how to use ThemeProvider. How to access tokens, what
+        input parameters are needed and how to change the color mode.
+      </p>
+      <p>
+        The ThemeProvider is React component in that allows for the easy
+        implementation of themes within an app. With ThemeProvider, you can
+        define a set of design tokens that will be applied to specific
+        components in your application, allowing for consistent styling across
+        your entire application.
+      </p>
+      <h3>useFluidTokens</h3>
+      <p>
+        A hook that creates typography, rootUnit, spacing, sizing fluid tokens
+        based on the passed parameters.
+      </p>
+      <h3>useTheme [WIP]</h3>
+      <p>
+        A hook that helps dynamically update tokens depending on incoming
+        parameters.
+      </p>
+      <h3>tokensAccessor</h3>
+      <p>
+        Creates an object containing tokens based on the passed parameters (see
+        the <code>defaultToken</code> structure) for subsequent conversion to
+        CSS variables.
+      </p>
+      <h3>defaultTokens</h3>
+      <p>Basic token configuration file.</p>
+    </StyledWrapper>
+  </Story>
+</Canvas>
