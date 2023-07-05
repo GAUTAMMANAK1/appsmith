@@ -171,6 +171,7 @@ export default class DataTreeEvaluator {
    * Sanitized eval values and errors
    */
   evalProps: EvalProps = {};
+  evalPathsIdenticalToState: any = {};
   undefinedEvalValuesMap: Record<string, boolean> = {};
 
   public hasCyclicalDependency = false;
@@ -184,6 +185,22 @@ export default class DataTreeEvaluator {
     this.widgetConfigMap = widgetConfigMap;
   }
 
+  getEvalPathsIdenticalToState(dataTree: any): Record<string, string> {
+    const nextState = this.evalPathsIdenticalToState;
+    //clean up adds paths which have deleted widget states
+    const addPaths = Object.keys(nextState)
+      .filter((evalPath) => {
+        const statePath = nextState[evalPath];
+        const [entityName] = statePath.split(".");
+        //remove undefined widget state
+        return !!get(dataTree, entityName);
+      })
+      .reduce((acc: any, path) => {
+        acc[path] = nextState[path];
+        return acc;
+      }, {});
+    return addPaths;
+  }
   getEvalTree() {
     return this.evalTree;
   }
@@ -341,6 +358,7 @@ export default class DataTreeEvaluator {
         evaluatedTree,
         {
           evalProps: this.evalProps,
+          evalPathsIdenticalToState: this.evalPathsIdenticalToState,
         },
         this.oldConfigTree,
       ),
@@ -991,6 +1009,7 @@ export default class DataTreeEvaluator {
                 evalPropertyValue,
                 unEvalPropertyValue,
                 evalProps: this.evalProps,
+                evalPathsIdenticalToState: this.evalPathsIdenticalToState,
               });
 
               this.setParsedValue({
@@ -1051,11 +1070,11 @@ export default class DataTreeEvaluator {
             }
 
             if (!propertyPath) return currentTree;
-            set(
-              this.evalProps,
-              getEvalValuePath(fullPropertyPath),
-              evalPropertyValue,
-            );
+
+            const evalPath = getEvalValuePath(fullPropertyPath);
+
+            this.evalPathsIdenticalToState[evalPath] = fullPropertyPath;
+
             set(currentTree, fullPropertyPath, evalPropertyValue);
             return currentTree;
           } else if (isJSAction(entity)) {
@@ -1075,6 +1094,7 @@ export default class DataTreeEvaluator {
                 fullPath: fullPropertyPath,
               });
 
+              //this check might not be necessary
               const hasUnEvalValueModified = !isEqual(
                 prevUnEvalValue,
                 unEvalPropertyValue,
@@ -1084,14 +1104,15 @@ export default class DataTreeEvaluator {
                 !hasUnEvalValueModified && prevEvaluatedValue
                   ? prevEvaluatedValue
                   : evalPropertyValue;
-              set(
-                this.evalProps,
-                getEvalValuePath(fullPropertyPath, {
-                  isPopulated: true,
-                  fullPath: true,
-                }),
-                evalValue,
-              );
+
+              const evalPath = getEvalValuePath(fullPropertyPath, {
+                isPopulated: true,
+                //what is the purpose of this argument
+                fullPath: true,
+              });
+
+              this.evalPathsIdenticalToState[evalPath] = fullPropertyPath;
+
               set(currentTree, fullPropertyPath, evalValue);
               JSObjectCollection.setVariableValue(evalValue, fullPropertyPath);
               JSObjectCollection.setPrevUnEvalState({
@@ -1448,6 +1469,7 @@ export default class DataTreeEvaluator {
             fullPath,
           ) as unknown as string,
           evalProps: this.evalProps,
+          evalPathsIdenticalToState: this.evalPathsIdenticalToState,
         });
       });
     }

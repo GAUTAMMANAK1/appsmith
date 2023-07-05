@@ -21,10 +21,12 @@ import {
 } from "@appsmith/workers/Evaluation/evaluationUtils";
 import { validate } from "workers/Evaluation/validations";
 import type { EvalProps } from ".";
+import type { ValidationResponse } from "constants/WidgetValidation";
 
 export function validateAndParseWidgetProperty({
   configTree,
   currentTree,
+  evalPathsIdenticalToState,
   evalPropertyValue,
   evalProps,
   fullPropertyPath,
@@ -38,6 +40,7 @@ export function validateAndParseWidgetProperty({
   evalPropertyValue: unknown;
   unEvalPropertyValue: string;
   evalProps: EvalProps;
+  evalPathsIdenticalToState: any;
 }): unknown {
   const { propertyPath } = getEntityNameAndPropertyPath(fullPropertyPath);
   if (isPathDynamicTrigger(widget, propertyPath)) {
@@ -83,14 +86,20 @@ export function validateAndParseWidgetProperty({
       configTree,
     });
   }
-  set(
-    evalProps,
-    getEvalValuePath(fullPropertyPath, {
-      isPopulated: false,
-      fullPath: true,
-    }),
-    evaluatedValue,
-  );
+
+  const evalPath = getEvalValuePath(fullPropertyPath, {
+    isPopulated: false,
+    fullPath: true,
+  });
+  const isParsedValueTheSame = parsed === evaluatedValue;
+
+  if (isParsedValueTheSame) {
+    evalPathsIdenticalToState[evalPath] = fullPropertyPath;
+  } else {
+    delete evalPathsIdenticalToState[evalPath];
+
+    set(evalProps, evalPath, evaluatedValue);
+  }
 
   return parsed;
 }
@@ -113,7 +122,7 @@ export function validateWidgetProperty(
 export function validateActionProperty(
   config: ValidationConfig,
   value: unknown,
-) {
+): ValidationResponse {
   if (!config) {
     return {
       isValid: true,
@@ -125,10 +134,10 @@ export function validateActionProperty(
 
 export function getValidatedTree(
   tree: DataTree,
-  option: { evalProps: EvalProps },
+  option: { evalProps: EvalProps; evalPathsIdenticalToState: any },
   configTree: ConfigTree,
 ) {
-  const { evalProps } = option;
+  const { evalPathsIdenticalToState, evalProps } = option;
   return Object.keys(tree).reduce((tree, entityKey: string) => {
     const entity = tree[entityKey];
     if (!isWidget(entity)) {
@@ -149,14 +158,20 @@ export function getValidatedTree(
           : isUndefined(transformed)
           ? value
           : transformed;
-        set(
-          evalProps,
-          getEvalValuePath(`${entityKey}.${property}`, {
-            isPopulated: false,
-            fullPath: true,
-          }),
-          evaluatedValue,
-        );
+
+        const isParsedValueTheSame = parsed === evaluatedValue;
+        const path = `${entityKey}.${property}`;
+        const evalPath = getEvalValuePath(path, {
+          isPopulated: false,
+          fullPath: true,
+        });
+        if (isParsedValueTheSame) {
+          evalPathsIdenticalToState[evalPath] = path;
+        } else {
+          set(evalProps, evalPath, evaluatedValue);
+          delete evalPathsIdenticalToState[evalPath];
+        }
+
         if (!isValid) {
           const evalErrors: EvaluationError[] =
             messages?.map((message) => ({

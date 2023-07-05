@@ -57,6 +57,7 @@ export interface EvalTreeResponseData {
   isNewWidgetAdded: boolean;
   undefinedEvalValuesMap: Record<string, boolean>;
   jsVarsCreatedEvent?: { path: string; type: string }[];
+  identicalEvalPathsPatches: Record<string, string>;
 }
 
 export type JSVarMutatedEvents = Record<string, { path: string; type: string }>;

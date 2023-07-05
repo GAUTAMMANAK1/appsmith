@@ -207,7 +207,10 @@ export default function (request: EvalWorkerSyncRequest) {
 
   const jsVarsCreatedEvent = getJSVariableCreatedEvents(jsUpdates);
 
+  const identicalEvalPathsPatches =
+    dataTreeEvaluator?.getEvalPathsIdenticalToState(dataTree) || {};
   const evalTreeResponse: EvalTreeResponseData = {
+    identicalEvalPathsPatches,
     dataTree,
     dependencies,
     errors,

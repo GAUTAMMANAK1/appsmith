@@ -60,7 +60,7 @@ import {
 import type { JSAction } from "entities/JSCollection";
 import { getAppMode } from "@appsmith/selectors/applicationSelectors";
 import { APP_MODE } from "entities/App";
-import { get, isEmpty } from "lodash";
+import { get, isEmpty, unset } from "lodash";
 import type { TriggerMeta } from "@appsmith/sagas/ActionExecution/ActionExecutionSagas";
 import { executeActionTriggers } from "@appsmith/sagas/ActionExecution/ActionExecutionSagas";
 import {
@@ -100,6 +100,7 @@ import { getAppsmithConfigs } from "@appsmith/configs";
 import { executeJSUpdates } from "actions/pluginActionActions";
 import { setEvaluatedActionSelectorField } from "actions/actionSelectorActions";
 import { waitForWidgetConfigBuild } from "./InitSagas";
+import produce from "immer";
 
 const APPSMITH_CONFIGS = getAppsmithConfigs();
 
@@ -145,6 +146,7 @@ export function* updateDataTreeHandler(
     undefinedEvalValuesMap,
     unEvalUpdates,
     jsVarsCreatedEvent,
+    identicalEvalPathsPatches,
   } = evalTreeResponse;
 
   const appMode: ReturnType<typeof getAppMode> = yield select(getAppMode);
@@ -156,13 +158,53 @@ export function* updateDataTreeHandler(
     PerformanceTransactionName.SET_EVALUATED_TREE,
   );
   const oldDataTree: ReturnType<typeof getDataTree> = yield select(getDataTree);
+  const oldDataTreeWithExcludedEvalValues = produce(oldDataTree, (draft) => {
+    Object.keys(identicalEvalPathsPatches).forEach((evalPath) => {
+      unset(draft, evalPath);
+    });
+  });
 
-  const updates = diff(oldDataTree, dataTree) || [];
+  const updates = diff(oldDataTreeWithExcludedEvalValues, dataTree) || [];
 
+  // decompress  __evaluation__ identical updates and generate the patch updates to the data tree
+  const evalUpdates: any = Object.keys(identicalEvalPathsPatches)
+    .map((evalPath) => {
+      const statePath = identicalEvalPathsPatches[evalPath];
+      //for object paths which have a "." in the object key like "a.['b.c']", we need to extract these
+      // paths and break them to appropriate patch paths
+      const regex = /(.+)\.\[\'(.*)\'\]/;
+
+      //get the matching value from the widget properies in the data tree
+      const val = get(dataTree, statePath);
+
+      const matches = evalPath.match(regex);
+      if (!matches || !matches.length) {
+        //regular paths like "a.b.c"
+
+        return {
+          kind: "N",
+          path: evalPath,
+          rhs: val,
+        };
+      }
+      // object paths which have a "." like "a.['b.c']"
+      const [, firstSeg, nestedPathSeg] = matches;
+      const segmentedPath = [...firstSeg.split("."), nestedPathSeg];
+
+      return {
+        kind: "N",
+        path: segmentedPath,
+        rhs: val,
+      };
+    })
+    .filter((v) => !!v);
+
+  const updatesWithEvalUpdates = [...updates, ...evalUpdates];
   if (!isEmpty(staleMetaIds)) {
     yield put(resetWidgetsMetaState(staleMetaIds));
   }
-  yield put(setEvaluatedTree(updates));
+  yield put(setEvaluatedTree(updatesWithEvalUpdates));
+
   ConfigTreeActions.setConfigTree(configTree);
 
   PerformanceTracker.stopAsyncTracking(
