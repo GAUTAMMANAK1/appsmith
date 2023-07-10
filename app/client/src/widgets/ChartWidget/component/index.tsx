@@ -1,24 +1,24 @@
 import { get } from "lodash";
-import equal from "fast-deep-equal/es6";
 import React from "react";
 import styled from "styled-components";
-
+import * as echarts from "echarts";
 import { invisible } from "constants/DefaultTheme";
 import { getAppsmithConfigs } from "@appsmith/configs";
 import type {
-  ChartDataPoint,
   ChartType,
   CustomFusionChartConfig,
   AllChartData,
+  ChartData,
   ChartSelectedDataPoint,
-} from "../constants";
-import {
   LabelOrientation,
-  LABEL_ORIENTATION_COMPATIBLE_CHARTS,
 } from "../constants";
-import { getSeriesChartData } from "./utils";
+
 import log from "loglevel";
 import { Colors } from "constants/Colors";
+import type { WidgetPositionProps } from "widgets/BaseWidget";
+import { ChartErrorComponent } from "./ChartErrorComponent";
+import EChartsConfiguration from "./EChartsConfiguration";
+import ChartsDatasetBuilder from "./EChartsDatasetBuilder";
 // Leaving this require here. Ref: https://stackoverflow.com/questions/41292559/could-not-find-a-declaration-file-for-module-module-name-path-to-module-nam/42505940#42505940
 // FusionCharts comes with its own typings so there is no need to separately import them. But an import from fusioncharts/core still requires a declaration file.
 const FusionCharts = require("fusioncharts");
@@ -50,7 +50,11 @@ FusionCharts.options.license({
   creditLabel: false,
 });
 
-export interface ChartComponentProps {
+export interface ChartComponentState {
+  chartError: unknown;
+  chartType: ChartType;
+}
+export interface ChartComponentProps extends WidgetPositionProps {
   allowScroll: boolean;
   chartData: AllChartData;
   chartName: string;
@@ -69,7 +73,17 @@ export interface ChartComponentProps {
   boxShadow?: string;
   primaryColor?: string;
   fontFamily?: string;
+  dimensions: {
+    componentWidth: number;
+    componentHeight: number;
+  };
 }
+
+const ChartsContainer = styled.div`
+  position: relative;
+  height: 100%;
+  width: 100%;
+`;
 
 const CanvasContainer = styled.div<
   Omit<ChartComponentProps, "onDataPointClick" | "hasOnDataPointClick">
@@ -86,284 +100,69 @@ const CanvasContainer = styled.div<
   padding: 10px 0 0 0;
 }`;
 
-export const isLabelOrientationApplicableFor = (chartType: string) =>
-  LABEL_ORIENTATION_COMPATIBLE_CHARTS.includes(chartType);
+class ChartComponent extends React.Component<
+  ChartComponentProps,
+  ChartComponentState
+> {
+  chartInstance: any = null;
+  echartsInstance: echarts.ECharts | undefined;
 
-class ChartComponent extends React.Component<ChartComponentProps> {
-  chartInstance = new FusionCharts();
+  customFusionChartContainerId =
+    this.props.widgetId + "custom-fusion-chart-container";
+  eChartsContainerId = this.props.widgetId + "echart-container";
+  chartContainerElement: HTMLElement | null = null;
 
-  chartContainerId = this.props.widgetId + "chart-container";
+  chartData: ChartData[] = [];
+  echartsConfigurationBuilder: EChartsConfiguration;
 
-  getChartType = () => {
-    const { allowScroll, chartData, chartType } = this.props;
-    const dataLength = Object.keys(chartData).length;
-    const isMSChart = dataLength > 1;
-    switch (chartType) {
-      case "PIE_CHART":
-        return "pie2d";
-      case "LINE_CHART":
-        return allowScroll ? "scrollline2d" : isMSChart ? "msline" : "line";
-      case "BAR_CHART":
-        return allowScroll ? "scrollBar2D" : isMSChart ? "msbar2d" : "bar2d";
-      case "AREA_CHART":
-        return allowScroll ? "scrollarea2d" : isMSChart ? "msarea" : "area2d";
-      case "COLUMN_CHART":
-        return allowScroll
-          ? "scrollColumn2D"
-          : isMSChart
-          ? "mscolumn2d"
-          : "column2d";
-      default:
-        return allowScroll ? "scrollColumn2D" : "mscolumn2d";
-    }
-  };
+  constructor(props: ChartComponentProps) {
+    super(props);
+    this.echartsConfigurationBuilder = new EChartsConfiguration();
 
-  getChartData = () => {
-    const chartData: AllChartData = this.props.chartData;
-    const dataLength = Object.keys(chartData).length;
-    const chartType = this.props.chartType;
-
-    // if datalength is zero, just pass a empty datum
-    if (dataLength === 0) {
-      return [
-        {
-          label: "",
-          value: "",
-        },
-      ];
-    }
-
-    const firstKey = Object.keys(chartData)[0] as string;
-    let data = get(chartData, `${firstKey}.data`, []) as ChartDataPoint[];
-    const color = chartData[firstKey] && chartData[firstKey].color;
-
-    if (!Array.isArray(data)) {
-      data = [];
-    }
-
-    if (data.length === 0) {
-      return [
-        {
-          label: "",
-          value: "",
-        },
-      ];
-    }
-
-    return data.map((item) => {
-      return {
-        label: item.x,
-        value: item.y,
-        color:
-          chartType === "PIE_CHART"
-            ? ""
-            : color
-            ? color
-            : this.props.primaryColor,
-      };
-    });
-  };
-
-  getChartCategoriesMultiSeries = (chartData: AllChartData) => {
-    const categories: string[] = [];
-
-    Object.keys(chartData).forEach((key: string) => {
-      let data = get(chartData, `${key}.data`, []) as ChartDataPoint[];
-
-      if (!Array.isArray(data)) {
-        data = [];
-      }
-
-      for (let dataIndex = 0; dataIndex < data.length; dataIndex++) {
-        const category = data[dataIndex].x;
-        if (!categories.includes(category)) {
-          categories.push(category);
-        }
-      }
-    });
-
-    return categories;
-  };
-
-  getChartCategories = (chartData: AllChartData) => {
-    const categories: string[] = this.getChartCategoriesMultiSeries(chartData);
-
-    if (categories.length === 0) {
-      return [
-        {
-          label: "",
-        },
-      ];
-    }
-    return categories.map((item) => {
-      return {
-        label: item,
-      };
-    });
-  };
-
-  /**
-   * creates dataset need by fusion chart  from widget object-data
-   *
-   * @param chartData
-   * @returns
-   */
-  getChartDataset = (chartData: AllChartData) => {
-    const categories: string[] = this.getChartCategoriesMultiSeries(chartData);
-
-    const dataset = Object.keys(chartData).map((key: string, index) => {
-      const item = get(chartData, `${key}`);
-
-      const seriesChartData: Array<Record<string, unknown>> =
-        getSeriesChartData(get(item, "data", []), categories);
-      return {
-        seriesName: item.seriesName,
-        color: item.color
-          ? item.color
-          : index === 0
-          ? this.props.primaryColor
-          : "",
-        data: seriesChartData,
-      };
-    });
-
-    return dataset;
-  };
-
-  getLabelOrientationConfig = () => {
-    switch (this.props.labelOrientation) {
-      case LabelOrientation.AUTO:
-        return {};
-      case LabelOrientation.ROTATE:
-        return {
-          labelDisplay: "rotate",
-          slantLabel: "0",
-        };
-      case LabelOrientation.SLANT:
-        return {
-          labelDisplay: "rotate",
-          slantLabel: "1",
-        };
-      case LabelOrientation.STAGGER:
-        return {
-          labelDisplay: "stagger",
-        };
-      default: {
-        return {};
-      }
-    }
-  };
-
-  getChartConfig = () => {
-    const isSingleSeriesData = this.getDatalength() === 1 ? true : false;
-    const paletteColorConfig = isSingleSeriesData &&
-      this.props.chartType !== "PIE_CHART" && {
-        palettecolors: [this.props.primaryColor],
-      };
-
-    const fontFamily =
-      this.props.fontFamily === "System Default"
-        ? "inherit"
-        : this.props.fontFamily;
-
-    const canvasPadding =
-      this.props.chartType === "LINE_CHART"
-        ? {
-            canvasLeftPadding: "5",
-            canvasTopPadding: "0",
-            canvasRightPadding: "5",
-            canvasBottomPadding: "0",
-          }
-        : {
-            canvasPadding: "0",
-          };
-
-    let config = {
-      caption: this.props.chartName,
-      xAxisName: this.props.xAxisName,
-      yAxisName: this.props.yAxisName,
-      theme: "fusion",
-      alignCaptionWithCanvas: 1,
-
-      // Caption styling =======================
-      captionFontSize: "24",
-      captionAlignment: "center",
-      captionPadding: "20",
-      captionFontColor: Colors.THUNDER,
-
-      // legend position styling ==========
-      legendIconSides: "4",
-      legendIconBgAlpha: "100",
-      legendIconAlpha: "100",
-      legendItemFont: fontFamily,
-      legendPosition: "top",
-      valueFont: fontFamily,
-
-      // Canvas styles ========
-      ...canvasPadding,
-
-      // Chart styling =======
-      chartLeftMargin: "20",
-      chartTopMargin: "10",
-      chartRightMargin: "40",
-      chartBottomMargin: "10",
-
-      // Axis name styling ======
-      xAxisNameFontSize: "14",
-      labelFontSize: "12",
-      labelFontColor: Colors.DOVE_GRAY2,
-      xAxisNameFontColor: Colors.DOVE_GRAY2,
-
-      yAxisNameFontSize: "14",
-      yAxisValueFontSize: "12",
-      yAxisValueFontColor: Colors.DOVE_GRAY2,
-      yAxisNameFontColor: Colors.DOVE_GRAY2,
-
-      // Base configurations ======
-      baseFont: fontFamily,
-      ...paletteColorConfig,
-      bgColor: Colors.WHITE,
-      setAdaptiveYMin: this.props.setAdaptiveYMin ? "1" : "0",
+    this.state = {
+      chartError: null,
+      chartType: this.props.chartType,
     };
+  }
 
-    if (isLabelOrientationApplicableFor(this.props.chartType)) {
-      config = {
-        ...config,
-        ...this.getLabelOrientationConfig(),
-      };
-    }
-
-    return config;
+  getEChartsOptions = () => {
+    const options = {
+      ...this.echartsConfigurationBuilder.prepareEChartConfig(
+        this.props,
+        this.chartData,
+      ),
+      dataset: {
+        ...ChartsDatasetBuilder.datasetFromData(this.chartData),
+      },
+    };
+    return options;
   };
 
-  getDatalength = () => {
-    return Object.keys(this.props.chartData).length;
-  };
-
-  getChartDataSource = () => {
-    const dataLength = this.getDatalength();
-
-    if (dataLength <= 1 || this.props.chartType === "PIE_CHART") {
-      return {
-        chart: this.getChartConfig(),
-        data: this.getChartData(),
-      };
-    } else {
-      return {
-        chart: this.getChartConfig(),
-        categories: [
-          {
-            category: this.getChartCategories(this.props.chartData),
-          },
-        ],
-        dataset: this.getChartDataset(this.props.chartData),
-      };
-    }
-  };
+  setupCustomFusionCharts() {
+    const chartConfig = {
+      renderAt: this.customFusionChartContainerId,
+      width: "100%",
+      height: "100%",
+      events: {
+        dataPlotClick: (evt: any) => {
+          const data = evt.data;
+          const seriesTitle = get(data, "datasetName", "");
+          this.props.onDataPointClick({
+            x: data.categoryLabel,
+            y: data.dataValue,
+            seriesTitle,
+          });
+        },
+      },
+      ...this.getCustomFusionChartDataSource(),
+    };
+    return chartConfig;
+  }
 
   getCustomFusionChartDataSource = () => {
     // in case of evaluation error, customFusionChartConfig can be undefined
     let config = this.props.customFusionChartConfig as CustomFusionChartConfig;
+
     if (config && config.dataSource) {
       config = {
         ...config,
@@ -380,99 +179,78 @@ class ChartComponent extends React.Component<ChartComponentProps> {
     return config || {};
   };
 
-  getScrollChartDataSource = () => {
-    const chartConfig = this.getChartConfig();
-
-    return {
-      chart: {
-        ...chartConfig,
-        scrollheight: "10",
-        showvalues: "1",
-        numVisiblePlot: "5",
-        flatScrollBars: "1",
-      },
-      categories: [
-        {
-          category: this.getChartCategories(this.props.chartData),
-        },
-      ],
-      data: this.getChartData(),
-      dataset: this.getChartDataset(this.props.chartData),
+  dataClickCallback = (params: echarts.ECElementEvent) => {
+    const eventData: Record<string, unknown> = params.data as Record<
+      string,
+      unknown
+    >;
+    const yValue = params.seriesName ? eventData[params.seriesName] : 0;
+    const chartSelectedPoint: ChartSelectedDataPoint = {
+      x: eventData.xaxiscategoryname,
+      y: yValue,
+      seriesTitle: params.seriesName || "",
     };
+    this.props.onDataPointClick(chartSelectedPoint);
   };
 
-  // return series title name for in clicked data point
-  getSeriesTitle = (data: any) => {
-    const dataLength = this.getDatalength();
-    // if pie chart or other chart have single dataset,
-    // get seriesName from chartData
-    if (
-      (dataLength <= 1 || this.props.chartType === "PIE_CHART") &&
-      this.props.chartType !== "CUSTOM_FUSION_CHART"
-    ) {
-      const chartData: AllChartData = this.props.chartData;
-      const firstKey = Object.keys(chartData)[0] as string;
-      return get(chartData, `${firstKey}.seriesName`, "");
-    }
-    // other charts return datasetName from clicked data point
-    return get(data, "datasetName", "");
-  };
+  renderECharts = () =>
+    // chartContainerElement: HTMLElement,
+    {
+      this.chartContainerElement = document.getElementById(
+        this.eChartsContainerId,
+      );
+      if (!this.chartContainerElement) {
+        return;
+      }
 
-  createGraph = () => {
-    if (this.props.chartType === "CUSTOM_FUSION_CHART") {
-      const chartConfig = {
-        renderAt: this.chartContainerId,
-        width: "100%",
-        height: "100%",
-        events: {
-          dataPlotClick: (evt: any) => {
-            const data = evt.data;
-            const seriesTitle = this.getSeriesTitle(data);
-            this.props.onDataPointClick({
-              x: data.categoryLabel,
-              y: data.dataValue,
-              seriesTitle,
-            });
-          },
-        },
-        ...this.getCustomFusionChartDataSource(),
-      };
-      this.chartInstance = new FusionCharts(chartConfig);
-      return;
-    }
-    const dataSource =
-      this.props.allowScroll && this.props.chartType !== "PIE_CHART"
-        ? this.getScrollChartDataSource()
-        : this.getChartDataSource();
+      try {
+        if (!this.echartsInstance || this.echartsInstance.isDisposed()) {
+          this.echartsInstance = echarts.init(
+            this.chartContainerElement,
+            undefined,
+            {
+              renderer: "svg",
+            },
+          );
+        }
 
-    const chartConfig = {
-      type: this.getChartType(),
-      renderAt: this.chartContainerId,
-      width: "100%",
-      height: "100%",
-      dataFormat: "json",
-      dataSource: dataSource,
-      events: {
-        dataPlotClick: (evt: any) => {
-          const data = evt.data;
-          const seriesTitle = this.getSeriesTitle(data);
-          this.props.onDataPointClick({
-            x: data.categoryLabel,
-            y: data.dataValue,
-            seriesTitle,
+        this.echartsInstance.off("click");
+        this.echartsInstance.on("click", this.dataClickCallback);
+        this.echartsInstance.setOption(this.getEChartsOptions(), true);
+        if (
+          this.echartsInstance.getHeight() !=
+            this.props.dimensions.componentHeight ||
+          this.echartsInstance.getWidth() !=
+            this.props.dimensions.componentWidth
+        ) {
+          this.echartsInstance.resize({
+            width: this.props.dimensions.componentWidth,
+            height: this.props.dimensions.componentHeight,
           });
-        },
-      },
+        }
+        if (this.state.chartError) {
+          this.setState({ chartError: null });
+        }
+      } catch (error) {
+        this.disposeECharts();
+        this.setState({ chartError: error });
+      }
     };
 
-    this.chartInstance = new FusionCharts(chartConfig);
+  disposeECharts = () => {
+    this.echartsInstance?.dispose();
   };
 
-  componentDidMount() {
-    this.createGraph();
+  disposeFusionCharts = () => {
+    this.chartInstance = null;
+  };
+
+  renderFusionCharts = () => {
+    const config = this.setupCustomFusionCharts();
+    this.chartInstance = new FusionCharts(config);
     FusionCharts.ready(() => {
       /* Component could be unmounted before FusionCharts is ready,
-      this check ensure we don't render on unmounted component */
+        this check ensure we don't render on unmounted component */
       if (this.chartInstance) {
         try {
           this.chartInstance.render();
@@ -481,31 +259,44 @@ class ChartComponent extends React.Component<ChartComponentProps> {
         }
       }
     });
+  };
+
+  componentDidMount() {
+    this.chartData = ChartsDatasetBuilder.chartData(this.props);
+    this.renderChartingLibrary();
   }
 
   componentWillUnmount() {
-    if (this.chartInstance) {
-      this.chartInstance = null;
+    this.disposeECharts();
+    this.disposeFusionCharts();
+  }
+
+  renderChartingLibrary() {
+    if (this.state.chartType === "CUSTOM_FUSION_CHART") {
+      this.disposeECharts();
+      this.renderFusionCharts();
+    } else {
+      this.disposeFusionCharts();
+      this.renderECharts();
     }
   }
 
-  componentDidUpdate(prevProps: ChartComponentProps) {
-    if (!equal(prevProps, this.props)) {
-      const chartType = this.getChartType();
-      this.chartInstance.chartType(chartType);
-      if (this.props.chartType === "CUSTOM_FUSION_CHART") {
-        const { dataSource, type } = this.getCustomFusionChartDataSource();
-        this.chartInstance.chartType(type);
-        this.chartInstance.setChartData(dataSource);
-      } else if (
-        this.props.allowScroll &&
-        this.props.chartType !== "PIE_CHART"
-      ) {
-        this.chartInstance.setChartData(this.getScrollChartDataSource());
-      } else {
-        this.chartInstance.setChartData(this.getChartDataSource());
-      }
+  componentDidUpdate() {
+    if (
+      this.props.chartType == "CUSTOM_FUSION_CHART" &&
+      this.state.chartType != "CUSTOM_FUSION_CHART"
+    ) {
+      this.setState({ chartType: "CUSTOM_FUSION_CHART" });
+    } else if (
+      this.props.chartType != "CUSTOM_FUSION_CHART" &&
+      this.state.chartType === "CUSTOM_FUSION_CHART"
+    ) {
+      // User has selected one of the ECharts option
+      this.setState({ chartType: "AREA_CHART" });
     }
+
+    this.chartData = ChartsDatasetBuilder.chartData(this.props);
+    this.renderChartingLibrary();
   }
 
   render() {
@@ -523,8 +314,18 @@ class ChartComponent extends React.Component<ChartComponentProps> {
         className={this.props.isLoading ? "bp3-skeleton" : ""}
         onClick={onClick}
         {...rest}
-        id={this.chartContainerId}
-      />
+      >
+        {this.state.chartType !== "CUSTOM_FUSION_CHART" && (
+          <ChartsContainer id={this.eChartsContainerId} />
+        )}
+        {this.state.chartType === "CUSTOM_FUSION_CHART" && (
+          <ChartsContainer id={this.customFusionChartContainerId} />
+        )}
+
+        {this.state.chartError && (
+          <ChartErrorComponent chartError={this.state.chartError} />
+        )}
+      </CanvasContainer>
     );
   }
 }

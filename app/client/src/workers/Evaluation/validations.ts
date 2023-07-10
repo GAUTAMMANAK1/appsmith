@@ -756,6 +756,7 @@ export const VALIDATORS: Record<ValidationTypes, Validator> = {
     props: Record<string, unknown>,
     propertyPath: string,
   ): ValidationResponse => {
+    // console.log("***", "validations running for property path ", propertyPath)
     if (
       value === undefined ||
       value === null ||
@@ -782,6 +783,7 @@ export const VALIDATORS: Record<ValidationTypes, Validator> = {
     }
 
     if (isPlainObject(value)) {
+      // console.log("***", "returning plain object ")
       return validatePlainObject(
         config,
         value as Record<string, unknown>,
@@ -792,7 +794,9 @@ export const VALIDATORS: Record<ValidationTypes, Validator> = {
 
     try {
       const result = { parsed: JSON.parse(value as string), isValid: true };
+      // console.log("***", "evaluatiing result ", result)
       if (isPlainObject(result.parsed)) {
+        // console.log("***", "returning validated plain object inside")
         return validatePlainObject(config, result.parsed, props, propertyPath);
       }
       return {
@@ -808,6 +812,7 @@ export const VALIDATORS: Record<ValidationTypes, Validator> = {
         ],
       };
     } catch (e) {
+      // console.log("***", "caught exception ", e)
       return {
         isValid: false,
         parsed: config.params?.default || {},

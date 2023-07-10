@@ -208,7 +208,7 @@ function PropertyPaneView(
             widgetType={widgetProperties?.type}
           />
         )}
-        {isDeprecated && (
+        {!isDeprecated && (
           <Callout data-testid="t--deprecation-warning" kind="warning">
             {deprecationMessage}
           </Callout>

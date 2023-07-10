@@ -70,7 +70,7 @@ describe("Chart Widget Functionality", function () {
     //creating the Modal and verify Modal name
     cy.createModal(this.dataSet.ModalName, "onDataPointClick");
     _.deployMode.DeployApp();
-    cy.get(widgetsPage.chartPlotGroup).children().first().click();
+    cy.get(widgetsPage.chartDataPoint).first().click();
     cy.get(modalWidgetPage.modelTextField).should(
       "have.text",
       this.dataSet.ModalName,
@@ -115,7 +115,7 @@ describe("Chart Widget Functionality", function () {
   it("8. Chart Widget Functionality To Check Horizontal Scroll Visible", function () {
     cy.togglebar(commonlocators.allowScroll);
     _.deployMode.DeployApp();
-    cy.get(publish.horizontalTab).eq(1).should("exist");
+    cy.get(publish.horizontalTab).should("exist");
   });
 
   afterEach(() => {
