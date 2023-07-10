@@ -60,7 +60,7 @@ import {
 import type { JSAction } from "entities/JSCollection";
 import { getAppMode } from "@appsmith/selectors/applicationSelectors";
 import { APP_MODE } from "entities/App";
-import { get, isEmpty, unset } from "lodash";
+import { get, isEmpty, isEqual, unset } from "lodash";
 import type { TriggerMeta } from "@appsmith/sagas/ActionExecution/ActionExecutionSagas";
 import { executeActionTriggers } from "@appsmith/sagas/ActionExecution/ActionExecutionSagas";
 import {
@@ -157,15 +157,28 @@ export function* updateDataTreeHandler(
   PerformanceTracker.startAsyncTracking(
     PerformanceTransactionName.SET_EVALUATED_TREE,
   );
+
   const oldDataTree: ReturnType<typeof getDataTree> = yield select(getDataTree);
+  console.time("clean state");
   const oldDataTreeWithExcludedEvalValues = produce(oldDataTree, (draft) => {
     Object.keys(identicalEvalPathsPatches).forEach((evalPath) => {
       unset(draft, evalPath);
     });
+
+    Object.keys(draft).forEach((entity) => {
+      const path = entity + ".__evaluation__.evaluatedValues";
+      if (isEmpty(get(draft, path))) {
+        unset(draft, path);
+      }
+    });
   });
+  console.timeEnd("clean state");
+  console.time("diff");
 
   const updates = diff(oldDataTreeWithExcludedEvalValues, dataTree) || [];
+  console.timeEnd("diff");
 
+  console.time("clean");
   // decompress  __evaluation__ identical updates and generate the patch updates to the data tree
   const evalUpdates: any = Object.keys(identicalEvalPathsPatches)
     .map((evalPath) => {
@@ -180,6 +193,13 @@ export function* updateDataTreeHandler(
       const matches = evalPath.match(regex);
       if (!matches || !matches.length) {
         //regular paths like "a.b.c"
+        const oldEvalVal = get(oldDataTree, evalPath);
+
+        const equalValues = isEqual(oldEvalVal, val);
+
+        if (equalValues) {
+          return null;
+        }
 
         return {
           kind: "N",
@@ -190,6 +210,13 @@ export function* updateDataTreeHandler(
       // object paths which have a "." like "a.['b.c']"
       const [, firstSeg, nestedPathSeg] = matches;
       const segmentedPath = [...firstSeg.split("."), nestedPathSeg];
+      const oldEvalVal = get(oldDataTree, segmentedPath);
+
+      const equalValues = isEqual(oldEvalVal, val);
+
+      if (equalValues) {
+        return null;
+      }
 
       return {
         kind: "N",
@@ -198,13 +225,16 @@ export function* updateDataTreeHandler(
       };
     })
     .filter((v) => !!v);
-
+  console.timeEnd("clean");
   const updatesWithEvalUpdates = [...updates, ...evalUpdates];
   if (!isEmpty(staleMetaIds)) {
     yield put(resetWidgetsMetaState(staleMetaIds));
   }
-  yield put(setEvaluatedTree(updatesWithEvalUpdates));
+  console.time("updates");
 
+  yield put(setEvaluatedTree(updatesWithEvalUpdates));
+  console.timeEnd("updates");
+  console.log("check ", updatesWithEvalUpdates);
   ConfigTreeActions.setConfigTree(configTree);
 
   PerformanceTracker.stopAsyncTracking(
