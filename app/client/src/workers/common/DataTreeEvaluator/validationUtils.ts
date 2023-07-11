@@ -30,7 +30,7 @@ export function setToEvalPathsIdenticalToState({
   isParsedValueTheSame,
   statePath,
   value,
-}) {
+}: any) {
   const isLargeCollection = Array.isArray(value) && value.length > 100;
 
   if (isParsedValueTheSame && isLargeCollection) {

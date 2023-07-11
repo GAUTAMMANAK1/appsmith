@@ -159,7 +159,7 @@ export function* updateDataTreeHandler(
   );
 
   const oldDataTree: ReturnType<typeof getDataTree> = yield select(getDataTree);
-  console.time("clean state");
+
   const oldDataTreeWithExcludedEvalValues = produce(oldDataTree, (draft) => {
     Object.keys(identicalEvalPathsPatches).forEach((evalPath) => {
       unset(draft, evalPath);
@@ -172,13 +172,9 @@ export function* updateDataTreeHandler(
       }
     });
   });
-  console.timeEnd("clean state");
-  console.time("diff");
 
   const updates = diff(oldDataTreeWithExcludedEvalValues, dataTree) || [];
-  console.timeEnd("diff");
 
-  console.time("clean");
   // decompress  __evaluation__ identical updates and generate the patch updates to the data tree
   const evalUpdates: any = Object.keys(identicalEvalPathsPatches)
     .map((evalPath) => {
@@ -225,16 +221,14 @@ export function* updateDataTreeHandler(
       };
     })
     .filter((v) => !!v);
-  console.timeEnd("clean");
+
   const updatesWithEvalUpdates = [...updates, ...evalUpdates];
   if (!isEmpty(staleMetaIds)) {
     yield put(resetWidgetsMetaState(staleMetaIds));
   }
-  console.time("updates");
 
   yield put(setEvaluatedTree(updatesWithEvalUpdates));
-  console.timeEnd("updates");
-  console.log("check ", updatesWithEvalUpdates);
+
   ConfigTreeActions.setConfigTree(configTree);
 
   PerformanceTracker.stopAsyncTracking(
