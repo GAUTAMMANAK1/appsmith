@@ -113,6 +113,7 @@ import {
 import { isJSObjectFunction } from "workers/Evaluation/JSObject/utils";
 import {
   getValidatedTree,
+  setToEvalPathsIdenticalToState,
   validateActionProperty,
   validateAndParseWidgetProperty,
 } from "./validationUtils";
@@ -1072,8 +1073,14 @@ export default class DataTreeEvaluator {
             if (!propertyPath) return currentTree;
 
             const evalPath = getEvalValuePath(fullPropertyPath);
-
-            this.evalPathsIdenticalToState[evalPath] = fullPropertyPath;
+            setToEvalPathsIdenticalToState({
+              evalPath,
+              evalPathsIdenticalToState: this.evalPathsIdenticalToState,
+              evalProps: this.evalProps,
+              isParsedValueTheSame: true,
+              statePath: fullPropertyPath,
+              value: evalPropertyValue,
+            });
 
             set(currentTree, fullPropertyPath, evalPropertyValue);
             return currentTree;
@@ -1111,7 +1118,14 @@ export default class DataTreeEvaluator {
                 fullPath: true,
               });
 
-              this.evalPathsIdenticalToState[evalPath] = fullPropertyPath;
+              setToEvalPathsIdenticalToState({
+                evalPath,
+                evalPathsIdenticalToState: this.evalPathsIdenticalToState,
+                evalProps: this.evalProps,
+                isParsedValueTheSame: true,
+                statePath: fullPropertyPath,
+                value: evalPropertyValue,
+              });
 
               set(currentTree, fullPropertyPath, evalValue);
               JSObjectCollection.setVariableValue(evalValue, fullPropertyPath);

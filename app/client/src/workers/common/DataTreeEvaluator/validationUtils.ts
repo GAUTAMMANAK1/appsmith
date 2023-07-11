@@ -23,6 +23,24 @@ import { validate } from "workers/Evaluation/validations";
 import type { EvalProps } from ".";
 import type { ValidationResponse } from "constants/WidgetValidation";
 
+export function setToEvalPathsIdenticalToState({
+  evalPath,
+  evalPathsIdenticalToState,
+  evalProps,
+  isParsedValueTheSame,
+  statePath,
+  value,
+}) {
+  const isLargeCollection = Array.isArray(value) && value.length > 100;
+
+  if (isParsedValueTheSame && isLargeCollection) {
+    evalPathsIdenticalToState[evalPath] = statePath;
+  } else {
+    delete evalPathsIdenticalToState[evalPath];
+
+    set(evalProps, evalPath, value);
+  }
+}
 export function validateAndParseWidgetProperty({
   configTree,
   currentTree,
@@ -93,13 +111,14 @@ export function validateAndParseWidgetProperty({
   });
   const isParsedValueTheSame = parsed === evaluatedValue;
 
-  if (isParsedValueTheSame) {
-    evalPathsIdenticalToState[evalPath] = fullPropertyPath;
-  } else {
-    delete evalPathsIdenticalToState[evalPath];
-
-    set(evalProps, evalPath, evaluatedValue);
-  }
+  setToEvalPathsIdenticalToState({
+    evalPath,
+    evalPathsIdenticalToState,
+    evalProps,
+    isParsedValueTheSame,
+    statePath: fullPropertyPath,
+    value: evaluatedValue,
+  });
 
   return parsed;
 }
@@ -165,12 +184,15 @@ export function getValidatedTree(
           isPopulated: false,
           fullPath: true,
         });
-        if (isParsedValueTheSame) {
-          evalPathsIdenticalToState[evalPath] = path;
-        } else {
-          set(evalProps, evalPath, evaluatedValue);
-          delete evalPathsIdenticalToState[evalPath];
-        }
+
+        setToEvalPathsIdenticalToState({
+          evalPath,
+          evalPathsIdenticalToState,
+          evalProps,
+          isParsedValueTheSame,
+          statePath: path,
+          value,
+        });
 
         if (!isValid) {
           const evalErrors: EvaluationError[] =
