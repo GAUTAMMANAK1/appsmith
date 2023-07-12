@@ -60,7 +60,7 @@ import {
 import type { JSAction } from "entities/JSCollection";
 import { getAppMode } from "@appsmith/selectors/applicationSelectors";
 import { APP_MODE } from "entities/App";
-import { get, isEmpty, isEqual, unset } from "lodash";
+import { get, isEmpty, isNumber, isObject } from "lodash";
 import type { TriggerMeta } from "@appsmith/sagas/ActionExecution/ActionExecutionSagas";
 import { executeActionTriggers } from "@appsmith/sagas/ActionExecution/ActionExecutionSagas";
 import {
@@ -100,10 +100,10 @@ import { getAppsmithConfigs } from "@appsmith/configs";
 import { executeJSUpdates } from "actions/pluginActionActions";
 import { setEvaluatedActionSelectorField } from "actions/actionSelectorActions";
 import { waitForWidgetConfigBuild } from "./InitSagas";
-import produce from "immer";
+import equal from "fast-deep-equal";
 
 const APPSMITH_CONFIGS = getAppsmithConfigs();
-
+const LARGE_COLLECTION_SIZE = 100;
 export const evalWorker = new GracefulWorkerService(
   new Worker(
     new URL("../workers/Evaluation/evaluation.worker.ts", import.meta.url),
@@ -160,69 +160,78 @@ export function* updateDataTreeHandler(
 
   const oldDataTree: ReturnType<typeof getDataTree> = yield select(getDataTree);
 
-  const oldDataTreeWithExcludedEvalValues = produce(oldDataTree, (draft) => {
-    Object.keys(identicalEvalPathsPatches).forEach((evalPath) => {
-      unset(draft, evalPath);
-    });
+  const generateWithKey = (basePath: any, key: any) => {
+    const segmentedPath = [...basePath, key];
 
-    Object.keys(draft).forEach((entity) => {
-      const path = entity + ".__evaluation__.evaluatedValues";
-      if (isEmpty(get(draft, path))) {
-        unset(draft, path);
-      }
-    });
-  });
+    if (isNumber(key)) {
+      return {
+        path: basePath.join(".") + ".[" + key + "]",
+        segmentedPath,
+      };
+    }
+    if (key.includes(".")) {
+      return {
+        path: basePath.join(".") + ".['" + key + "']",
+        segmentedPath,
+      };
+    }
+    return {
+      path: basePath.join(".") + "." + key,
+      segmentedPath,
+    };
+  };
 
-  const updates = diff(oldDataTreeWithExcludedEvalValues, dataTree) || [];
+  const isLargeCollection = (val: any) => {
+    if (!Array.isArray(val)) return false;
+    const rowSize = !isObject(val[0]) ? 1 : Object.keys(val[0]).length;
 
-  // decompress  __evaluation__ identical updates and generate the patch updates to the data tree
-  const evalUpdates: any = Object.keys(identicalEvalPathsPatches)
-    .map((evalPath) => {
-      const statePath = identicalEvalPathsPatches[evalPath];
-      //for object paths which have a "." in the object key like "a.['b.c']", we need to extract these
-      // paths and break them to appropriate patch paths
-      const regex = /(.+)\.\[\'(.*)\'\]/;
+    const size = val.length * rowSize;
 
-      //get the matching value from the widget properies in the data tree
-      const val = get(dataTree, statePath);
+    return size > LARGE_COLLECTION_SIZE;
+  };
+  const ignoreLargeKeys = identicalEvalPathsPatches;
+  const attachDirectly: any = [];
+  const updates =
+    diff(oldDataTree, dataTree, (path, key) => {
+      if (!path.length || key === "__evaluation__") return false;
 
-      const matches = evalPath.match(regex);
-      if (!matches || !matches.length) {
-        //regular paths like "a.b.c"
-        const oldEvalVal = get(oldDataTree, evalPath);
+      const { path: setPath, segmentedPath } = generateWithKey(path, key);
 
-        const equalValues = isEqual(oldEvalVal, val);
-
-        if (equalValues) {
-          return null;
+      // if ignore path is present
+      if (!!ignoreLargeKeys[setPath]) {
+        const originalStateVal = get(oldDataTree, segmentedPath);
+        const correspondingStatePath = identicalEvalPathsPatches[setPath];
+        const statePathValue = get(dataTree, correspondingStatePath);
+        if (!equal(originalStateVal, statePathValue)) {
+          attachDirectly.push({ path: segmentedPath, rhs: statePathValue });
         }
 
-        return {
-          kind: "N",
-          path: evalPath,
-          rhs: val,
-        };
+        return true;
       }
-      // object paths which have a "." like "a.['b.c']"
-      const [, firstSeg, nestedPathSeg] = matches;
-      const segmentedPath = [...firstSeg.split("."), nestedPathSeg];
-      const oldEvalVal = get(oldDataTree, segmentedPath);
+      const rhs = get(dataTree, segmentedPath);
 
-      const equalValues = isEqual(oldEvalVal, val);
+      const lhs = get(oldDataTree, segmentedPath);
 
-      if (equalValues) {
-        return null;
+      const isLhsLarge = isLargeCollection(lhs);
+      const isRhsLarge = isLargeCollection(rhs);
+      if (!isLhsLarge && !isRhsLarge) {
+        return false;
       }
 
-      return {
-        kind: "N",
-        path: segmentedPath,
-        rhs: val,
-      };
-    })
-    .filter((v) => !!v);
+      if ((!isLhsLarge && isRhsLarge) || (isLhsLarge && !isRhsLarge)) {
+        attachDirectly.push({ path: segmentedPath, rhs });
+        return true;
+      }
 
-  const updatesWithEvalUpdates = [...updates, ...evalUpdates];
+      !equal(lhs, rhs) && attachDirectly.push({ path: segmentedPath, rhs });
+
+      return true;
+    }) || [];
+
+  const updatesWithEvalUpdates = [
+    ...updates,
+    ...attachDirectly.map((val: any) => ({ kind: "N", ...val })),
+  ];
   if (!isEmpty(staleMetaIds)) {
     yield put(resetWidgetsMetaState(staleMetaIds));
   }

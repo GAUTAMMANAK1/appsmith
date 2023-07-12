@@ -23,6 +23,7 @@ import { validate } from "workers/Evaluation/validations";
 import type { EvalProps } from ".";
 import type { ValidationResponse } from "constants/WidgetValidation";
 
+const LARGE_COLLECTION_SIZE = 100;
 export function setToEvalPathsIdenticalToState({
   evalPath,
   evalPathsIdenticalToState,
@@ -31,7 +32,8 @@ export function setToEvalPathsIdenticalToState({
   statePath,
   value,
 }: any) {
-  const isLargeCollection = Array.isArray(value) && value.length > 100;
+  const isLargeCollection =
+    Array.isArray(value) && value.length > LARGE_COLLECTION_SIZE;
 
   if (isParsedValueTheSame && isLargeCollection) {
     evalPathsIdenticalToState[evalPath] = statePath;
