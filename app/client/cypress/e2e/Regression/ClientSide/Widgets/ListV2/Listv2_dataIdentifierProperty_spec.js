@@ -136,6 +136,7 @@ describe("List v2 - Data Identifier property", () => {
       .click({ force: true });
     cy.wait(250);
 
+    //nothing found here
     cy.get(".t--dropdown-option").first().click({ force: true });
 
     cy.get(widgetsPage.containerWidget).should("have.length", 2);
@@ -155,6 +156,7 @@ describe("List v2 - Data Identifier property", () => {
       .click({ force: true });
     cy.wait(250);
 
+    //nothing found here
     cy.get(".t--dropdown-option").last().click({ force: true });
 
     cy.get(widgetsPage.containerWidget).should("have.length", 2);
