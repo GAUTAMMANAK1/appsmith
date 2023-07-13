@@ -17,7 +17,7 @@ import log from "loglevel";
 import { Colors } from "constants/Colors";
 import type { WidgetPositionProps } from "widgets/BaseWidget";
 import { ChartErrorComponent } from "./ChartErrorComponent";
-import EChartsConfiguration from "./EChartsConfiguration";
+import EChartsConfigurationBuilder from "./EChartsConfigurationBuilder";
 import ChartsDatasetBuilder from "./EChartsDatasetBuilder";
 // Leaving this require here. Ref: https://stackoverflow.com/questions/41292559/could-not-find-a-declaration-file-for-module-module-name-path-to-module-nam/42505940#42505940
 // FusionCharts comes with its own typings so there is no need to separately import them. But an import from fusioncharts/core still requires a declaration file.
@@ -113,11 +113,11 @@ class ChartComponent extends React.Component<
   chartContainerElement: HTMLElement | null = null;
 
   chartData: ChartData[] = [];
-  echartsConfigurationBuilder: EChartsConfiguration;
+  echartsConfigurationBuilder: EChartsConfigurationBuilder;
 
   constructor(props: ChartComponentProps) {
     super(props);
-    this.echartsConfigurationBuilder = new EChartsConfiguration();
+    this.echartsConfigurationBuilder = new EChartsConfigurationBuilder();
 
     this.state = {
       chartError: null,
@@ -194,7 +194,6 @@ class ChartComponent extends React.Component<
   };
 
   renderECharts = () =>
-    // chartContainerElement: HTMLElement,
     {
       this.chartContainerElement = document.getElementById(
         this.eChartsContainerId,

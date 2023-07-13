@@ -1,9 +1,9 @@
 import type { ChartComponentProps } from ".";
-import type { ChartData } from "../constants";
+import { LabelOrientation, type ChartData } from "../constants";
 
 import { Colors } from "constants/Colors";
 
-export default class EChartsConfiguration {
+export default class EChartsConfigurationBuilder {
   fontFamily: string | undefined;
 
   #seriesConfigForChartType(
@@ -108,7 +108,19 @@ export default class EChartsConfiguration {
     return config;
   }
 
-  #defaultEChartConfig = (): Record<string, unknown> => {
+  #gridBottomOffset(props: ChartComponentProps) {
+    let offset = 100;
+    if (props.labelOrientation == LabelOrientation.ROTATE) {
+      let offsetPercentage = 0.2*props.dimensions.componentHeight
+      if (offsetPercentage > offset) {
+        offset = offsetPercentage
+      }
+    }
+
+    return offset
+  }
+
+  #defaultEChartConfig = (props: ChartComponentProps): Record<string, unknown> => {
     const config: Record<string, any> = {
       legend: {
         left: "right",
@@ -117,7 +129,7 @@ export default class EChartsConfiguration {
         padding: 20,
       },
     };
-    config.grid = { bottom: "100", left: "100" };
+    config.grid = { bottom: this.#gridBottomOffset(props), left: "100" };
     return config;
   };
 
@@ -153,6 +165,20 @@ export default class EChartsConfiguration {
     return config;
   };
 
+  #nameGapForXAxisLabel = (props : ChartComponentProps) => {
+    let gap = 40;
+    
+    if (props.labelOrientation == LabelOrientation.ROTATE) {
+      let percentageGap = 0.12*props.dimensions.componentHeight
+      if (percentageGap > gap) {
+        gap = percentageGap
+      }
+    }
+
+    console.log("***", "name gap is ", gap)
+    return gap
+  }
+
   #xAxisConfig = (props: ChartComponentProps) => {
     /**
      * {
@@ -174,7 +200,7 @@ export default class EChartsConfiguration {
     if (props.chartType != "PIE_CHART") {
       config.name = props.xAxisName;
       config.nameLocation = "middle";
-      config.nameGap = 40;
+      config.nameGap = this.#nameGapForXAxisLabel(props);
       config.nameTextStyle = {
         fontSize: 14,
         fontFamily: this.fontFamily,
@@ -202,7 +228,7 @@ export default class EChartsConfiguration {
   prepareEChartConfig(props: ChartComponentProps, chartData: ChartData[]) {
     this.fontFamily = this.#evaluateFontFamily(props.fontFamily);
 
-    const chartConfig: Record<string, unknown> = this.#defaultEChartConfig();
+    const chartConfig: Record<string, unknown> = this.#defaultEChartConfig(props);
     chartConfig.title = this.#titleConfigForChart(props, chartData);
     chartConfig.xAxis = this.#xAxisConfig(props);
     chartConfig.yAxis = this.#yAxisConfig(props);

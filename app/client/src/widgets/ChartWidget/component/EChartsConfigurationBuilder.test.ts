@@ -2,7 +2,7 @@ import { Colors } from "constants/Colors";
 import type { ChartComponentProps } from ".";
 import type { ChartData } from "../constants";
 import { LabelOrientation } from "../constants";
-import EChartsConfiguration from "./EChartsConfiguration";
+import EChartsConfiguration from "./EChartsConfigurationBuilder";
 
 describe("EChartsConfigurationBuilder", () => {
   const builder = new EChartsConfiguration();
@@ -226,14 +226,14 @@ describe("EChartsConfigurationBuilder", () => {
       expect(output.xAxis).toStrictEqual(expectedConfig.xAxis);
     });
 
-    it("returns correct configuration for label orientation SLANT", () => {
+    it("should configuration for label orientation SLANT", () => {
       const props = { ...defaultProps };
       props.labelOrientation = LabelOrientation.SLANT;
 
       const expectedConfig: any = { ...defaultExpectedConfig };
       expectedConfig.xAxis = { ...expectedConfig.xAxis };
       expectedConfig.xAxis.axisLabel = { ...expectedConfig.xAxis.axisLabel };
-      expectedConfig.xAxis.axisLabel.rotate = "45";
+      expectedConfig.xAxis.axisLabel.rotate = "45"; // slant configuration needs rotate = 45;
 
       const output = builder.prepareEChartConfig(props, chartData);
       expect(output.xAxis).toStrictEqual(expectedConfig.xAxis);
@@ -303,7 +303,7 @@ describe("EChartsConfigurationBuilder", () => {
       const expectedConfig: any = JSON.parse(
         JSON.stringify(defaultExpectedConfig),
       );
-      expectedConfig.yAxis.min = "dataMin";
+      expectedConfig.yAxis.min = "dataMin"; // "datamin" means that the y axis is adaptive in echarts
 
       const output = builder.prepareEChartConfig(props, chartData);
       expect(output).toStrictEqual(expectedConfig);
