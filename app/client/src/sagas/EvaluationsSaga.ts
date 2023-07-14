@@ -191,6 +191,7 @@ export function* updateDataTreeHandler(
   };
   const ignoreLargeKeys = identicalEvalPathsPatches;
   const attachDirectly: any = [];
+  const ignoreLargeKeysHasBeenAttached = new Set();
   const updates =
     diff(oldDataTree, dataTree, (path, key) => {
       if (!path.length || key === "__evaluation__") return false;
@@ -205,7 +206,7 @@ export function* updateDataTreeHandler(
         if (!equal(originalStateVal, statePathValue)) {
           attachDirectly.push({ path: segmentedPath, rhs: statePathValue });
         }
-
+        ignoreLargeKeysHasBeenAttached.add(setPath);
         return true;
       }
       const rhs = get(dataTree, segmentedPath);
@@ -228,9 +229,41 @@ export function* updateDataTreeHandler(
       return true;
     }) || [];
 
+  const missingSetPaths = Object.keys(identicalEvalPathsPatches)
+    .filter((evalPath) => !ignoreLargeKeysHasBeenAttached.has(evalPath))
+    .map((evalPath) => {
+      const statePath = identicalEvalPathsPatches[evalPath];
+      //for object paths which have a "." in the object key like "a.['b.c']", we need to extract these
+      // paths and break them to appropriate patch paths
+      const regex = /(.+)\.\[\'(.*)\'\]/;
+
+      //get the matching value from the widget properies in the data tree
+      const val = get(dataTree, statePath);
+
+      const matches = evalPath.match(regex);
+      if (!matches || !matches.length) {
+        //regular paths like "a.b.c"
+
+        return {
+          kind: "N",
+          path: evalPath,
+          rhs: val,
+        };
+      }
+      // object paths which have a "." like "a.['b.c']"
+      const [, firstSeg, nestedPathSeg] = matches;
+      const segmentedPath = [...firstSeg.split("."), nestedPathSeg];
+
+      return {
+        kind: "N",
+        path: segmentedPath,
+        rhs: val,
+      };
+    });
   const updatesWithEvalUpdates = [
     ...updates,
     ...attachDirectly.map((val: any) => ({ kind: "N", ...val })),
+    ...missingSetPaths,
   ];
   if (!isEmpty(staleMetaIds)) {
     yield put(resetWidgetsMetaState(staleMetaIds));
